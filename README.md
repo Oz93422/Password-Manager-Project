@@ -5,7 +5,7 @@ This project helps you:
 
 -Check if a password is strong or weak
 
--Encrypt it 
+-Encrypt it (the password)
 
 -Save it along with site login info
 
