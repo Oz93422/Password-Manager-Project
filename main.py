@@ -247,7 +247,7 @@ class Password_Manager_Project:
                     print("No password attempts recorded.")
 
             elif choice == "6":
-                confirm = input("Are you sure you want to clear all password attempts and logs? (yes/no): ")
+                confirm = input("Are you sure you want to clear all password attempts and sites? (yes/no): ")
                 if confirm.lower() in ["yes", "y"]:
                     if os.path.exists("password.json"):
                         os.remove("password.json")
