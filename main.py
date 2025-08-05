@@ -12,7 +12,7 @@ class Password_Manager_Project:
         username = input("Enter your username: ")
         password = input("Enter your password: ")
 
-        if username == "admin" and password == "h":
+        if username == "admin" and password == "h*90weOBq.2i":
             print("Login successful!")
             return True
         else:
