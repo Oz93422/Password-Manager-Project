@@ -2,9 +2,33 @@ import json
 import os
 import random
 import string
+import hashlib
+import argparse
 
+# Incooperating Parser for command-line arguments
+def parse_args():
+    parser = argparse.ArgumentParser(description="CAD Password Manager")
+    parser.add_argument(
+        '-a', '--action',
+        choices=['register', 'get-encrypted', 'get-decrypted', 'view-sites', 'view-attempts', 'clear', 'exit'],
+        help='Action to perform: register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit',
+        required=False,
+        default='view-sites'  
+    )
+    parser.add_argument('-s', '--site', help='Site URL')
+    parser.add_argument('-u', '--username', help='Username or Email for the site')
+    parser.add_argument('-p', '--password', help='Password for the site')
+    return parser.parse_args()
+
+
+
+# Hash Admin Password
+def hash_password(password):
+        return hashlib.sha256(password.encode()).hexdigest()
+stored_hash = hash_password("h*90weOBq.2i")
 
 class Password_Manager_Project:
+    
     
     # Login User
     def login_user():
@@ -12,7 +36,7 @@ class Password_Manager_Project:
         username = input("Enter your username: ")
         password = input("Enter your password: ")
 
-        if username == "admin" and password == "h*90weOBq.2i":
+        if username == "admin" and hash_password(password) == stored_hash:
             print("Login successful!")
             return True
         else:
@@ -156,114 +180,88 @@ class Password_Manager_Project:
         
 
 # Main Program
-    def main():
-        if not Password_Manager_Project.login_user():
-            return
+def main(args):
+    if not Password_Manager_Project.login_user():
+        return
 
-        while True:
-            print("\nChoose an option:")
-            print("1. Register a new site")                
-            print("2. Retrieve password for a site (encrypted)")
-            print("3. Retrieve password for a site (decrypted)")
-            print("4. View all registered sites")
-            print("5. View password attempts")
-            print("6. Clear all password attempts and clear logs")
-            print("7. Exit")
-            choice = input("Enter your choice: ")
+    while True:
+        print("\nChoose an action:")
+        print("  register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit")
+        action = input("Action: ").strip().lower()
 
-            if choice == "1":
-                site_url = input("Enter the site URL: ")
-                username = input("Enter the username or email: ")
-                password = input("Enter the password: ")
+        if action == 'register':
+            site = input("Site URL: ")
+            username = input("Username or Email: ")
+            password = input("Password: ")
 
-                if Password_Manager_Project.if_site_already_registered(site_url):
+            if Password_Manager_Project.if_site_already_registered(site):
+                continue
+
+            encrypted_password = Password_Manager_Project.encrypt_password(password)
+
+            if not Password_Manager_Project.strong_password(password):
+                choice = input("Password is weak. Register anyway? (yes/no): ").lower()
+                if choice not in ['yes', 'y']:
+                    Password_Manager_Project.log_password_attempt(password, False)
                     continue
 
-                encrypted_password = Password_Manager_Project.encrypt_password(password)
+            Password_Manager_Project.log_sites(site, username, encrypted_password)
+            Password_Manager_Project.log_password_attempt(password, True)
 
-                if not Password_Manager_Project.strong_password(password):
-                    confirm = input("Password is not strong. Would you still like to register it? (yes/no): ")
-                    if confirm.lower() not in ["yes", "y"]:
-                        print("New site registration canceled.")
-                        continue
-                    else:
-                        Password_Manager_Project.log_password_attempt(password, False)
-                else:
-                    Password_Manager_Project.log_password_attempt(password, True)
-
-                Password_Manager_Project.log_sites(site_url, username, encrypted_password)
-
-            elif choice == "2":
-                site_url = input("Enter the site URL: ")
-                info = Password_Manager_Project.log_site_info("info.json")
-                found = False
-                for site in info.get("sites", []):
-                    if site["site"] == site_url:
-                        print(f"\nSite: {site['site']}")
-                        print(f"Username: {site['username']}")
-                        print(f"Encrypted Password: {site['password']}")
-                        found = True
-                        break
-                if not found:
-                    print("Site not found in the registry.")
-
-            elif choice == "3":
-                site_url = input("Enter the site URL: ")
-                info = Password_Manager_Project.log_site_info("info.json")
-                found = False
-                for site in info.get("sites", []):
-                    if site["site"] == site_url:
-                        print(f"\nSite: {site['site']}")
-                        print(f"Username: {site['username']}")
-                        if "key" not in site:
-                            print("This site's password was stored before encryption keys were added and cannot be decrypted.")
-                            found = True
-                            break
-                        key = site["key"]
-                        chars = " " + string.punctuation + string.digits + string.ascii_letters
-                        chars = list(chars)
-                        decrypted = Password_Manager_Project.decrypt_password(site['password'], chars, key)
-                        print(f"Decrypted Password: {decrypted}")
-                        found = True
-                        break
-                if not found:
-                    print("Site not found in the registry.")
-
-
-
-            elif choice == "4":
-                sites = Password_Manager_Project.log_site_info("info.json")
-                print("\nRegistered Sites:")
-                for site in sites.get("sites", []):
-                    print(f"- {site['site']}")
-                if len(sites["sites"]) == 0:
-                    print("No sites registered.")
-
-            elif choice == "5":
-                attempts = Password_Manager_Project.log_password_info("password.json")
-                print("\nPassword Attempts Log:")
-                print(json.dumps(attempts, indent=4))
-                if len(attempts["strong_attempts"]) == 0 and len(attempts["weak_attempts"]) == 0:
-                    print("No password attempts recorded.")
-
-            elif choice == "6":
-                confirm = input("Are you sure you want to clear all password attempts and sites? (yes/no): ")
-                if confirm.lower() in ["yes", "y"]:
-                    if os.path.exists("password.json"):
-                        os.remove("password.json")
-                        print("Password attempts cleared successfully.")
-                    if os.path.exists("info.json"):
-                        os.remove("info.json")
-                        print("Site registry cleared successfully.")
-                    print("All logs and data cleared.")
-
-            elif choice == "7":
-                print("Exiting the program...")
-                break
-
+        elif action == 'get-encrypted':
+            site = input("Site URL: ")
+            data = Password_Manager_Project.log_site_info("info.json")
+            for s in data.get("sites", []):
+                if s['site'] == site:
+                    print(f"Encrypted Password: {s['password']}")
+                    break
             else:
-                print("Invalid choice. Please enter a number from 1 to 7.")
+                print("Site not found.")
 
+        elif action == 'get-decrypted':
+            site = input("Site URL: ")
+            data = Password_Manager_Project.log_site_info("info.json")
+            for s in data.get("sites", []):
+                if s['site'] == site:
+                    chars = list(" " + string.punctuation + string.digits + string.ascii_letters)
+                    decrypted = Password_Manager_Project.decrypt_password(s['password'], chars, s['key'])
+                    print(f"Decrypted Password: {decrypted}")
+                    break
+            else:
+                print("Site not found.")
+
+        elif action == 'view-sites':
+            data = Password_Manager_Project.log_site_info("info.json")
+            if data["sites"]:
+                print("Registered Sites:")
+                for s in data["sites"]:
+                    print(f"- {s['site']}")
+            else:
+                print("No sites registered.")
+
+        elif action == 'view-attempts':
+            data = Password_Manager_Project.log_password_info("password.json")
+            print("Password Attempts Log:")
+            print(json.dumps(data, indent=4))
+
+        elif action == 'clear':
+            confirm = input("Are you sure you want to clear all logs? (yes/no): ").lower()
+            if confirm in ['yes', 'y']:
+                if os.path.exists("info.json"):
+                    os.remove("info.json")
+                if os.path.exists("password.json"):
+                    os.remove("password.json")
+                print("Logs cleared.")
+            else:
+                print("Canceled.")
+
+        elif action == 'exit':
+            print("Goodbye.")
+            break
+
+        else:
+            print("Invalid action. Try again.")
 
 if __name__ == "__main__":
-    Password_Manager_Project.main()
+    args = parse_args()
+    main(args)
