@@ -4,6 +4,23 @@ import random
 import string
 import hashlib
 import argparse
+from cryptography.fernet import Fernet
+
+
+#Load or Create encryption key
+
+def key():
+    key_file = "secret.key"
+    if os.path.exists(key_file):
+        with open(key_file, 'rb') as f:
+            return f.read()
+    else:
+        key = Fernet.generate_key()
+        with open(key_file, 'wb') as f:
+            f.write(key)
+        return key
+Secret_key = key()
+cipher_suite = Fernet(Secret_key)
 
 # Incooperating Parser for command-line arguments
 def parse_args():
@@ -33,17 +50,26 @@ class Password_Manager_Project:
     # Login User
     def login_user():
         print("Login to the CAD Password Manager")
-        username = input("Enter your username: ")
-        password = input("Enter your password: ")
-
-        if username == "admin" and hash_password(password) == stored_hash:
-            print("Login successful!")
-            return True
-        else:
-            print("Invalid username or password.")
-            return False
+        max_attempts = 3
+        attempts = 0
         
-    # Checks if site already registered
+        while attempts < max_attempts:
+            username = input("Enter your username: ")
+            password = input("Enter your password: ")
+
+            if username == "admin" and hash_password(password) == stored_hash:
+                print("Login successful!")
+                return True
+            else:
+                attempts += 1
+                if attempts < max_attempts:
+                    print(f"Invalid credentials. You have {max_attempts - attempts} attempt(s) left.\n")
+                else:
+                    print("Maximum login attempts reached. Exiting...")
+        return False
+
+            
+        # Checks if site already registered
     
     def if_site_already_registered(site_url):
         try:
@@ -116,29 +142,16 @@ class Password_Manager_Project:
 
     # Password Encryption
     def encrypt_password(password):
-        chars = " " + string.punctuation + string.digits + string.ascii_letters
-        chars = list(chars)
-        key = chars.copy()
-        random.shuffle(key)
+        encrypted = cipher_suite.encrypt(password.encode())
+        print(f"Encrypted password: {encrypted}")
+        return encrypted
+            
 
-        ciphertext = ""
-        for letter in password:
-            index = chars.index(letter)
-            ciphertext += key[index]
-
-        print(f"Original Password: {password}")
-        print(f"Encrypted Password: {ciphertext}")
-        return ciphertext, key
-    
     # Password Decryption
-    def decrypt_password(ciphertext, chars, key):
-        plaintext = ""
-        for letter in ciphertext:
-            index = key.index(letter)
-            plaintext += chars[index]
-
-        
-        return plaintext
+    def decrypt_password(encrypted_password):
+        decrypted = cipher_suite.decrypt(encrypted_password.encode()).decode()
+        print(f"Decrypted password: {decrypted}")
+        return decrypted
 
     
    
@@ -157,9 +170,8 @@ class Password_Manager_Project:
             
     
     # Logs new site info
-    def log_sites(site_url, username, password_data):
+    def log_sites(site_url, username, encrypted_password):
         filename = "info.json"
-        encrypted_password, key = password_data
         print(f"Logging site info for {site_url}...")
         data = Password_Manager_Project.log_site_info(filename)
 
@@ -167,7 +179,7 @@ class Password_Manager_Project:
             "site": site_url,
             "username": username,
             "password": encrypted_password,
-            "key": key  
+            
         }
 
         data["sites"].append(site_info)
@@ -183,7 +195,7 @@ class Password_Manager_Project:
 def main(args):
     if not Password_Manager_Project.login_user():
         return
-
+        
     while True:
         print("\nChoose an action:")
         print("  register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit")
@@ -199,14 +211,20 @@ def main(args):
 
             encrypted_password = Password_Manager_Project.encrypt_password(password)
 
-            if not Password_Manager_Project.strong_password(password):
+            is_strong = Password_Manager_Project.strong_password(password)
+            if not is_strong:
                 choice = input("Password is weak. Register anyway? (yes/no): ").lower()
                 if choice not in ['yes', 'y']:
                     Password_Manager_Project.log_password_attempt(password, False)
                     continue
-
-            Password_Manager_Project.log_sites(site, username, encrypted_password)
-            Password_Manager_Project.log_password_attempt(password, True)
+                else:
+                    Password_Manager_Project.log_sites(site, username, encrypted_password)
+                    Password_Manager_Project.log_password_attempt(password, False)
+            else:
+                Password_Manager_Project.log_sites(site, username, encrypted_password)
+                Password_Manager_Project.log_password_attempt(password, True)
+            
+            
 
         elif action == 'get-encrypted':
             site = input("Site URL: ")
@@ -223,8 +241,7 @@ def main(args):
             data = Password_Manager_Project.log_site_info("info.json")
             for s in data.get("sites", []):
                 if s['site'] == site:
-                    chars = list(" " + string.punctuation + string.digits + string.ascii_letters)
-                    decrypted = Password_Manager_Project.decrypt_password(s['password'], chars, s['key'])
+                    decrypted = Password_Manager_Project.decrypt_password(s['password'])
                     print(f"Decrypted Password: {decrypted}")
                     break
             else:
@@ -262,6 +279,9 @@ def main(args):
         else:
             print("Invalid action. Try again.")
 
+
+                    
+            
 if __name__ == "__main__":
     args = parse_args()
     main(args)
