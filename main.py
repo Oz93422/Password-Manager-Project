@@ -8,7 +8,6 @@ from cryptography.fernet import Fernet
 
 
 #Load or Create encryption key
-
 def key():
     key_file = "secret.key"
     if os.path.exists(key_file):
@@ -178,7 +177,7 @@ class Password_Manager_Project:
         site_info = {
             "site": site_url,
             "username": username,
-            "password": encrypted_password,
+            "password": encrypted_password.decode(),
             
         }
 
@@ -195,7 +194,7 @@ class Password_Manager_Project:
 def main(args):
     if not Password_Manager_Project.login_user():
         return
-        
+
     while True:
         print("\nChoose an action:")
         print("  register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit")
@@ -206,25 +205,21 @@ def main(args):
             username = input("Username or Email: ")
             password = input("Password: ")
 
-            if Password_Manager_Project.if_site_already_registered(site):
-                continue
-
-            encrypted_password = Password_Manager_Project.encrypt_password(password)
-
             is_strong = Password_Manager_Project.strong_password(password)
+
             if not is_strong:
                 choice = input("Password is weak. Register anyway? (yes/no): ").lower()
                 if choice not in ['yes', 'y']:
                     Password_Manager_Project.log_password_attempt(password, False)
                     continue
-                else:
-                    Password_Manager_Project.log_sites(site, username, encrypted_password)
-                    Password_Manager_Project.log_password_attempt(password, False)
-            else:
-                Password_Manager_Project.log_sites(site, username, encrypted_password)
-                Password_Manager_Project.log_password_attempt(password, True)
-            
-            
+
+            if Password_Manager_Project.if_site_already_registered(site):
+                print("Site is already registered.")
+                continue
+
+            encrypted_password = Password_Manager_Project.encrypt_password(password)
+            Password_Manager_Project.log_sites(site, username, encrypted_password)
+            Password_Manager_Project.log_password_attempt(password, is_strong)
 
         elif action == 'get-encrypted':
             site = input("Site URL: ")
@@ -273,15 +268,14 @@ def main(args):
                 print("Canceled.")
 
         elif action == 'exit':
-            print("Goodbye.")
+            print("Exiting Program...")
             break
 
         else:
             print("Invalid action. Try again.")
 
 
-                    
-            
+
 if __name__ == "__main__":
     args = parse_args()
     main(args)
