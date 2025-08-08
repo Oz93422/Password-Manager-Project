@@ -1,13 +1,11 @@
-import json
-import os
-import random
-import string
 import hashlib
-import argparse
+import sys
+import sqlite3
+import os
 from cryptography.fernet import Fernet
 
 
-#Load or Create encryption key
+# Generate a key for encryption and decryption.
 def key():
     key_file = "secret.key"
     if os.path.exists(key_file):
@@ -18,44 +16,57 @@ def key():
         with open(key_file, 'wb') as f:
             f.write(key)
         return key
+
+
 Secret_key = key()
 cipher_suite = Fernet(Secret_key)
 
-# Incooperating Parser for command-line arguments
-def parse_args():
-    parser = argparse.ArgumentParser(description="CAD Password Manager")
-    parser.add_argument(
-        '-a', '--action',
-        choices=['register', 'get-encrypted', 'get-decrypted', 'view-sites', 'view-attempts', 'clear', 'exit'],
-        help='Action to perform: register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit',
-        required=False,
-        default='view-sites'  
-    )
-    parser.add_argument('-s', '--site', help='Site URL')
-    parser.add_argument('-u', '--username', help='Username or Email for the site')
-    parser.add_argument('-p', '--password', help='Password for the site')
-    return parser.parse_args()
 
-
-
-# Hash Admin Password
+#Hash a password using SHA-256.(security)
 def hash_password(password):
-        return hashlib.sha256(password.encode()).hexdigest()
+    return hashlib.sha256(password.encode()).hexdigest()
 stored_hash = hash_password("h*90weOBq.2i")
 
+
 class Password_Manager_Project:
-    
-    
-    # Login User
+    conn = None
+    cursor = None
+
+    # Create a SQL database
+    def create_database():
+        Password_Manager_Project.conn = sqlite3.connect('password_manager.db')
+        Password_Manager_Project.cursor = Password_Manager_Project.conn.cursor()
+        Password_Manager_Project.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                site TEXT NOT NULL UNIQUE,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+        Password_Manager_Project.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS password_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                password TEXT NOT NULL,
+                strong_password INTEGER NOT NULL
+            )
+        ''')
+        Password_Manager_Project.conn.commit()
+
+    #close the SQL database
+    def close_database():
+        if Password_Manager_Project.conn:
+            Password_Manager_Project.conn.close()
+
+    #users login to the Password Manager
     def login_user():
+        #username = admin password = h*90weOBq.2i
         print("Login to the CAD Password Manager")
         max_attempts = 3
         attempts = 0
-        
         while attempts < max_attempts:
             username = input("Enter your username: ")
             password = input("Enter your password: ")
-
             if username == "admin" and hash_password(password) == stored_hash:
                 print("Login successful!")
                 return True
@@ -67,27 +78,24 @@ class Password_Manager_Project:
                     print("Maximum login attempts reached. Exiting...")
         return False
 
-            
-        # Checks if site already registered
-    
+    #checks if a site is already registered in the database
     def if_site_already_registered(site_url):
-        try:
-            with open("info.json", "r") as file:
-                data = json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return False  
+        Password_Manager_Project.cursor.execute('SELECT site FROM sites WHERE site = ?', (site_url,))
+        result = Password_Manager_Project.cursor.fetchone()
+        if result:
+            print(f"Site '{site_url}' is already registered.")
+            overwrite = input("Do you want to overwrite the existing site information? (yes/no): ").strip().lower()
+            while overwrite not in ["yes", "y", "no", "n"]:
+                overwrite = input("Please answer 'yes' or 'no': ").strip().lower()
+            if overwrite in ["yes", "y"]:
+                print("Overwriting site info.")
+                return False
+            else:
+                print("Not overwriting site info. Registration cancelled.")
+                return True
+        return False
 
-        for site in data.get("sites", []):
-            if site['site'] == site_url:
-                print(f"Site {site['site']} is already registered.")
-                overwrite = input("Do you want to overwrite the existing site information? (yes/no): ")
-                if overwrite.lower() in ["yes", "y"]:
-                    return False  
-                else:
-                    return True   
-        return False 
-            
-    # Check Strength of Password
+    #detects if a password is strong or weak
     def strong_password(password):
         if len(password) < 8:
             print("Password should be at least 8 characters long.")
@@ -107,175 +115,152 @@ class Password_Manager_Project:
         print("Strong password!")
         return True
 
-    # Checks if json file for passwords exists and if not, creates one
-    def log_password_info(filename):
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            try:
-                with open(filename, "r") as file:
-                    data = json.load(file)
-                    return data
-            except:
-                print("Warning: Couldn't read the log file. Making a new one.")
-        return {"strong_attempts": [], "weak_attempts": []}
-
-    # Logs password attempt
-    def log_password_attempt(password, strong_password_flag):
-        filename = "password.json"
-        print(f"Logging password attempt...")
-        data = Password_Manager_Project.log_password_info(filename)
-
-        attempt = {
-            "password": password,
-            "strong_password": strong_password_flag
-        }
-
-        if strong_password_flag:
-            data["strong_attempts"].append(attempt)
-            print("Password logged into strong attempts.")
-        else:
-            data["weak_attempts"].append(attempt)
-            print("Password logged into weak attempts.")
-
-        with open(filename, "w") as file:
-            json.dump(data, file, indent=5)
-
-    # Password Encryption
+    #encryption for password
     def encrypt_password(password):
         encrypted = cipher_suite.encrypt(password.encode())
-        print(f"Encrypted password: {encrypted}")
         return encrypted
-            
 
-    # Password Decryption
+    #decryption for password
     def decrypt_password(encrypted_password):
-        decrypted = cipher_suite.decrypt(encrypted_password.encode()).decode()
-        print(f"Decrypted password: {decrypted}")
-        return decrypted
+        try:
+            decrypted = cipher_suite.decrypt(encrypted_password.encode()).decode()
+            return decrypted
+        except Exception:
+            return None
 
-    
-   
-    
-    # Checks if json file for sites exists and if not, creates one
-    def log_site_info(filename):
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            try:
-                with open(filename, "r") as file:
-                    data = json.load(file)
-                    return data
-            except:
-                    print("Warning: Couldn't read the log file. Making a new one.")
-                    return {"sites": []}
-        return {"sites": []}
-            
-    
-    # Logs new site info
+    #adds new sites to the SQL database
     def log_sites(site_url, username, encrypted_password):
-        filename = "info.json"
-        print(f"Logging site info for {site_url}...")
-        data = Password_Manager_Project.log_site_info(filename)
+        try:
+            Password_Manager_Project.cursor.execute('''
+                INSERT INTO sites (site, username, password) VALUES (?, ?, ?)
+                ON CONFLICT(site) DO UPDATE SET
+                    username=excluded.username,
+                    password=excluded.password
+            ''', (site_url, username, encrypted_password.decode()))
+            Password_Manager_Project.conn.commit()
+            print("Site info saved successfully.")
+        except Exception as e:
+            print(f"Error saving site info: {e}")
 
-        site_info = {
-            "site": site_url,
-            "username": username,
-            "password": encrypted_password.decode(),
-            
-        }
+    # logs password attempts to the SQL database
+    def log_password_attempt(password, strong_password_flag):
+        try:
+            Password_Manager_Project.cursor.execute('''
+                INSERT INTO password_attempts (password, strong_password) VALUES (?, ?)
+            ''', (password, int(strong_password_flag)))
+            Password_Manager_Project.conn.commit()
+            print("Password attempt logged.")
+        except Exception as e:
+            print(f"Error logging password attempt: {e}")
 
-        data["sites"].append(site_info)
+    #returns the encrypted password for a given site
+    def get_encrypted_password(site_url):
+        Password_Manager_Project.cursor.execute('SELECT password FROM sites WHERE site = ?', (site_url,))
+        result = Password_Manager_Project.cursor.fetchone()
+        return result[0] if result else None
 
-        with open(filename, "w") as file:
-            json.dump(data, file, indent=5)
+    #returns the decrypted password for a given site
+    def get_decrypted_password(site_url):
+        encrypted = Password_Manager_Project.get_encrypted_password(site_url)
+        if encrypted:
+            return Password_Manager_Project.decrypt_password(encrypted)
+        else:
+            return None
 
-        print("New site registered successfully.")
+    #lists all registered sites
+    def list_registered_sites():
+        Password_Manager_Project.cursor.execute('SELECT site FROM sites')
+        rows = Password_Manager_Project.cursor.fetchall()
+        if rows:
+            print("Registered Sites:")
+            for row in rows:
+                print(f"- {row[0]}")
+        else:
+            print("No sites registered.")
 
-        
+    #lists all password attempts and declears them as weak or strong
+    def list_password_attempts():
+        Password_Manager_Project.cursor.execute('SELECT password, strong_password FROM password_attempts')
+        rows = Password_Manager_Project.cursor.fetchall()
+        if rows:
+            print("Password Attempts Log:")
+            for password, strong_flag in rows:
+                strength = "Strong" if strong_flag else "Weak"
+                print(f"- Password: {password} | Strength: {strength}")
+        else:
+            print("No password attempts logged.")
 
-# Main Program
-def main(args):
+
+#main function 
+def main():
+    Password_Manager_Project.create_database()
     if not Password_Manager_Project.login_user():
+        Password_Manager_Project.close_database()
         return
-
     while True:
         print("\nChoose an action:")
-        print("  register, get-encrypted, get-decrypted, view-sites, view-attempts, clear, exit")
-        action = input("Action: ").strip().lower()
-
-        if action == 'register':
-            site = input("Site URL: ")
-            username = input("Username or Email: ")
-            password = input("Password: ")
-
-            is_strong = Password_Manager_Project.strong_password(password)
-
-            if not is_strong:
-                choice = input("Password is weak. Register anyway? (yes/no): ").lower()
-                if choice not in ['yes', 'y']:
-                    Password_Manager_Project.log_password_attempt(password, False)
-                    continue
-
+        print("register or r - Register new site")
+        print("encrypted or e - Get encrypted password")
+        print("decrypted or d - Get decrypted password")
+        print("view register or vr - View registered sites")
+        print("view passwords or vp - View password attempts")
+        print("clear or c - Clear all logs")
+        print("exit or x - Exit")
+        choice = input("Enter choice: ").strip().lower()
+        
+        if choice in ['register', 'r']:
+            site = input("Enter site name: ").strip()
+            username = input("Enter username: ").strip()
+            password = input("Enter password: ").strip()
             if Password_Manager_Project.if_site_already_registered(site):
-                print("Site is already registered.")
                 continue
-
+            if not Password_Manager_Project.strong_password(password):
+                print("This password is not strong would you still like to use it? (yes/no): ")
+                choice = input("Enter choice: ")
+                if choice not in ['yes', 'y', 'Yes', 'Y', 'YES']:
+                    print("Registration cancelled.")
+                    continue
             encrypted_password = Password_Manager_Project.encrypt_password(password)
             Password_Manager_Project.log_sites(site, username, encrypted_password)
-            Password_Manager_Project.log_password_attempt(password, is_strong)
-
-        elif action == 'get-encrypted':
-            site = input("Site URL: ")
-            data = Password_Manager_Project.log_site_info("info.json")
-            for s in data.get("sites", []):
-                if s['site'] == site:
-                    print(f"Encrypted Password: {s['password']}")
-                    break
+            Password_Manager_Project.log_password_attempt(password, Password_Manager_Project.strong_password(password))
+            print("Registration successful!")
+       
+        elif choice in ['encrypted', 'e']:
+            site = input("Enter site name: ").strip()
+            encrypted = Password_Manager_Project.get_encrypted_password(site)
+            if encrypted:
+                print(f"Encrypted Password: {encrypted}")
             else:
                 print("Site not found.")
-
-        elif action == 'get-decrypted':
-            site = input("Site URL: ")
-            data = Password_Manager_Project.log_site_info("info.json")
-            for s in data.get("sites", []):
-                if s['site'] == site:
-                    decrypted = Password_Manager_Project.decrypt_password(s['password'])
-                    print(f"Decrypted Password: {decrypted}")
-                    break
+       
+        elif choice in ['decrypted', 'd']:
+            site = input("Enter site name: ").strip()
+            decrypted = Password_Manager_Project.get_decrypted_password(site)
+            if decrypted:
+                print(f"Decrypted Password: {decrypted}")
             else:
                 print("Site not found.")
-
-        elif action == 'view-sites':
-            data = Password_Manager_Project.log_site_info("info.json")
-            if data["sites"]:
-                print("Registered Sites:")
-                for s in data["sites"]:
-                    print(f"- {s['site']}")
-            else:
-                print("No sites registered.")
-
-        elif action == 'view-attempts':
-            data = Password_Manager_Project.log_password_info("password.json")
-            print("Password Attempts Log:")
-            print(json.dumps(data, indent=4))
-
-        elif action == 'clear':
-            confirm = input("Are you sure you want to clear all logs? (yes/no): ").lower()
-            if confirm in ['yes', 'y']:
-                if os.path.exists("info.json"):
-                    os.remove("info.json")
-                if os.path.exists("password.json"):
-                    os.remove("password.json")
-                print("Logs cleared.")
-            else:
-                print("Canceled.")
-
-        elif action == 'exit':
-            print("Exiting Program...")
-            break
-
+       
+        elif choice in ['view register', 'vr']:
+            Password_Manager_Project.list_registered_sites()
+       
+        elif choice in ['view passwords', 'vp']:
+            Password_Manager_Project.list_password_attempts()
+       
+        elif choice in ['clear', 'c']:
+            Password_Manager_Project.cursor.execute('DELETE FROM sites')
+            Password_Manager_Project.cursor.execute('DELETE FROM password_attempts')
+            Password_Manager_Project.conn.commit()
+            print("Logs cleared.")
+        
+        elif choice in ['exit', 'x']:
+            print("Exiting program...")
+            Password_Manager_Project.close_database()
+            sys.exit(0)
+       
         else:
-            print("Invalid action. Try again.")
-
+            print("Invalid choice. Please try again.")
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+    main()
